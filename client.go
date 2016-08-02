@@ -3,12 +3,15 @@ package main
 import (
 	"crypto/tls"
 	"crypto/x509"
+	"fmt"
+	"github.com/influxdata/influxdb/client/v2"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"net/url"
 	"strings"
 	"sync"
+	"time"
 )
 
 func StartClient(url_, heads, meth string, dka bool, responseChan chan *Response, waitGroup *sync.WaitGroup, tc int) {
@@ -91,6 +94,41 @@ func StartClient(url_, heads, meth string, dka bool, responseChan chan *Response
 		if len(responseChan) >= tc {
 			break
 		}
+		fmt.Printf("resp = %d %d %d %v\n", respObj.Size, respObj.Duration, respObj.StatusCode, respObj.Error)
+		fmt.Println("Add data to database ", *influxDB)
+		clnt, err := client.NewHTTPClient(client.HTTPConfig{
+			Addr: *influxHost,
+		})
+
+		if err != nil {
+			log.Fatalln("Error: ", err)
+		}
+		defer clnt.Close()
+
+		bp, _ := client.NewBatchPoints(client.BatchPointsConfig{
+			Database:  *influxDB,
+			Precision: "us",
+		})
+		tags := map[string]string{
+			"link":    target,
+			"queueno": "123456",
+		}
+		fields := map[string]interface{}{
+			"size":       respObj.Size,
+			"resptime":   respObj.Duration,
+			"statuscode": respObj.StatusCode,
+		}
+		pt, err := client.NewPoint("loadtest", tags, fields, time.Now())
+
+		if err != nil {
+			log.Fatalln("Error: ", err)
+		}
+
+		bp.AddPoint(pt)
+
+		// Write the batch
+		clnt.Write(bp)
+
 		responseChan <- respObj
 	}
 }

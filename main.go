@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"github.com/influxdata/influxdb/client/v2"
 	"io/ioutil"
+	"log"
 	"os"
 	"runtime"
 )
@@ -29,6 +31,8 @@ var (
 	keyFile           = flag.String("key", "someKeyFile", "A PEM encoded private key file.")
 	caFile            = flag.String("CA", "someCertCAFile", "A PEM eoncoded CA's certificate file.")
 	insecure          = flag.Bool("i", false, "TLS checks are disabled")
+	influxHost        = flag.String("influxHost", "", "influxdb address example http://localhost:8086")
+	influxDB          = flag.String("influxDB", "mydb", "influxdb database name")
 )
 
 func init() {
@@ -51,7 +55,39 @@ func readConfig() {
 	}
 }
 
+func queryDB(clnt client.Client, cmd string) (res []client.Result, err error) {
+	q := client.Query{
+		Command:  cmd,
+		Database: *influxDB,
+	}
+	if response, err := clnt.Query(q); err == nil {
+		if response.Error() != nil {
+			return res, response.Error()
+		}
+		res = response.Results
+	} else {
+		return res, err
+	}
+	return res, nil
+}
+
 func main() {
+	if *influxHost != "someHost" {
+		fmt.Println("Create influxdb database ", *influxDB)
+		clnt, err := client.NewHTTPClient(client.HTTPConfig{
+			Addr: *influxHost,
+		})
+
+		if err != nil {
+			log.Fatalln("Error: ", err)
+		}
+		defer clnt.Close()
+		_, err1 := queryDB(clnt, fmt.Sprintf("CREATE DATABASE %s", *influxDB))
+		if err1 != nil {
+			log.Fatal(err)
+		}
+	}
+
 	switch *dist {
 	case "m":
 		MasterNode()
